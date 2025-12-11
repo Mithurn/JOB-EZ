@@ -29,4 +29,19 @@ HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
 os.makedirs(RESUMES_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
+# 6. Runtime flags (can be overridden via environment variables)
+# DRY_RUN: when True the bot will not submit applications (safe testing)
+# HEADLESS_MODE: when False the browser will be visible for debugging
+DRY_RUN = os.getenv("DRY_RUN", "False").lower() in ("1", "true", "yes")
+HEADLESS_MODE = os.getenv("HEADLESS_MODE", "False").lower() in ("1", "true", "yes")
+# Daily/application settings (can be tuned via environment)
+try:
+    MAX_APPLICATIONS_PER_DAY = int(os.getenv("MAX_APPLICATIONS_PER_DAY", "20"))
+except Exception:
+    MAX_APPLICATIONS_PER_DAY = 20
+
+# Comma-separated search queries / preferred locations
+SEARCH_QUERIES = [q.strip() for q in os.getenv("SEARCH_QUERIES", "Python Developer").split(",") if q.strip()]
+PREFERRED_LOCATIONS = [q.strip() for q in os.getenv("PREFERRED_LOCATIONS", "India").split(",") if q.strip()]
+
 print(f"✅ Config loaded. Root path: {ROOT_DIR}")

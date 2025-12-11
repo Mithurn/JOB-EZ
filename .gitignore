@@ -4,3 +4,5 @@ __pycache__/
 chrome_profile/
 data/logs/
 *.DS_Store
+user_config.py
+src/user_config.py

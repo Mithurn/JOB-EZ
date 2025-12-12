@@ -14,6 +14,10 @@ data/chrome_profile/
 data/logs/
 data/history.json
 data/job_tracker.xlsx
+data/test_tracker.xlsx
+data/unfilled_fields_tracker.xlsx
+data/sjob_tracker.xlsx
+data/resumes/
 src/user_config.py
 
 # Playwright cache (optional)

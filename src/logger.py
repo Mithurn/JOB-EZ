@@ -63,9 +63,8 @@ class JobLogger:
         Set up the Applications sheet with headers and formatting.
         """
         headers = [
-            "Date", "Time", "Job Title", "Company", "Platform", 
-            "Location", "Resume Used", "Match Score", "Confidence",
-            "Status", "Application URL", "Notes"
+            "Date", "Job Title", "Company", "Location", 
+            "Resume Used", "Status", "Application URL", "Result Details"
         ]
         
         # Write headers
@@ -83,18 +82,14 @@ class JobLogger:
         
         # Set column widths
         column_widths = {
-            'A': 12,  # Date
-            'B': 10,  # Time
-            'C': 30,  # Job Title
-            'D': 25,  # Company
-            'E': 12,  # Platform
-            'F': 20,  # Location
-            'G': 20,  # Resume Used
-            'H': 12,  # Match Score
-            'I': 12,  # Confidence
-            'J': 12,  # Status
-            'K': 40,  # Application URL
-            'L': 40,  # Notes
+            'A': 18,  # Date (with time)
+            'B': 35,  # Job Title
+            'C': 25,  # Company
+            'D': 25,  # Location
+            'E': 25,  # Resume Used
+            'F': 15,  # Status
+            'G': 50,  # Application URL
+            'H': 40,  # Result Details
         }
         
         for col, width in column_widths.items():
@@ -109,26 +104,22 @@ class JobLogger:
         Set up the Statistics sheet with summary metrics.
         """
         # Title
-        sheet['A1'] = "📊 APPLICATION STATISTICS"
-        sheet['A1'].font = Font(bold=True, size=14)
+        sheet['A1'] = "📊 JOB APPLICATION SUMMARY"
+        sheet['A1'].font = Font(bold=True, size=16, color="4472C4")
+        sheet.merge_cells('A1:B1')
         
         # Metrics structure
         metrics = [
             ("", ""),
+            ("📝 OVERALL STATS", ""),
             ("Total Applications", "=COUNTA(Applications!A:A)-1"),
-            ("Successful", "=COUNTIF(Applications!J:J,\"Success\")"),
-            ("Failed", "=COUNTIF(Applications!J:J,\"Failed\")"),
-            ("Pending", "=COUNTIF(Applications!J:J,\"Pending\")"),
-            ("Success Rate", "=IF(B3>0,B4/B3,0)"),
+            ("Successful Submissions", "=COUNTIF(Applications!F:F,\"Success\")"),
+            ("Failed Applications", "=COUNTIFS(Applications!F:F,\"*Failed*\")"),
+            ("Skipped Jobs", "=COUNTIF(Applications!F:F,\"Skipped\")"),
+            ("Success Rate", "=IF(B4>0,B5/B4,0)"),
             ("", ""),
-            ("By Platform:", ""),
-            ("LinkedIn", "=COUNTIF(Applications!E:E,\"LinkedIn\")"),
-            ("Indeed", "=COUNTIF(Applications!E:E,\"Indeed\")"),
-            ("Glassdoor", "=COUNTIF(Applications!E:E,\"Glassdoor\")"),
-            ("Other", "=B3-B9-B10-B11"),
-            ("", ""),
-            ("By Resume:", ""),
-            # These will be calculated dynamically
+            ("📁 RESUMES USED", ""),
+            # Resume stats will show which resume was most successful
         ]
         
         for row_num, (label, formula) in enumerate(metrics, 1):
@@ -136,17 +127,16 @@ class JobLogger:
             if formula:
                 sheet[f'B{row_num}'] = formula
         
-        # Format metrics
-        sheet['A2'].font = Font(bold=True)
-        sheet['A8'].font = Font(bold=True)
-        sheet['A14'].font = Font(bold=True)
+        # Format section headers
+        sheet['A3'].font = Font(bold=True, size=12)
+        sheet['A10'].font = Font(bold=True, size=12)
         
         # Format success rate as percentage
-        sheet['B6'].number_format = '0.0%'
+        sheet['B8'].number_format = '0.0%'
         
         # Column widths
-        sheet.column_dimensions['A'].width = 20
-        sheet.column_dimensions['B'].width = 15
+        sheet.column_dimensions['A'].width = 25
+        sheet.column_dimensions['B'].width = 20
     
     
     def _setup_daily_summary_sheet(self, sheet):
@@ -186,37 +176,45 @@ class JobLogger:
         notes: str = ""
     ):
         """
-        Log a job application.
+        Log a job application with clean, user-friendly format.
         
         Args:
             job_title: Title of the job
             company: Company name
-            platform: Job board (LinkedIn, Indeed, etc.)
-            resume_used: Which resume was used (e.g., "frontend.pdf")
-            match_score: AI match score (0-100)
-            confidence: AI confidence (0.0-1.0)
-            status: Success/Failed/Pending
+            platform: Job board (LinkedIn, Indeed, etc.) - not displayed but used for stats
+            resume_used: Which resume was used (filename only)
+            match_score: AI match score (0-100) - used internally but not displayed
+            confidence: AI confidence (0.0-1.0) - used internally but not displayed
+            status: Success/Failed/Skipped
             location: Job location
             application_url: Link to the job posting
-            notes: Any additional notes or error messages
+            notes: Error messages or important details only
         """
         sheet = self.workbook["Applications"]
         
-        # Prepare data
+        # Prepare data - cleaner format
         now = datetime.now()
+        
+        # Create meaningful result details
+        result_details = ""
+        if status == "Success":
+            result_details = "✓ Application submitted successfully"
+        elif "Failed" in status:
+            result_details = f"✗ {notes}" if notes else "✗ Application failed"
+        elif status == "Skipped":
+            result_details = f"○ Skipped - {notes}" if notes else "○ Skipped (not Easy Apply)"
+        else:
+            result_details = notes
+        
         row_data = [
-            now.strftime("%Y-%m-%d"),           # Date
-            now.strftime("%H:%M:%S"),           # Time
+            now.strftime("%Y-%m-%d %H:%M"),     # Date with time
             job_title,                           # Job Title
             company,                             # Company
-            platform,                            # Platform
             location,                            # Location
-            resume_used,                         # Resume Used
-            match_score,                         # Match Score
-            f"{confidence:.0%}",                # Confidence (as percentage)
+            resume_used.replace('.pdf', ''),    # Resume (clean name)
             status,                              # Status
             application_url,                     # URL
-            notes                                # Notes
+            result_details                       # Result Details
         ]
         
         # Append to sheet
@@ -224,15 +222,15 @@ class JobLogger:
         
         # Color code status
         status_row = sheet.max_row
-        status_cell = sheet.cell(row=status_row, column=10)  # Column J (Status)
+        status_cell = sheet.cell(row=status_row, column=6)  # Column F (Status)
         
         if status == "Success":
             status_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-            status_cell.font = Font(color="006100")
-        elif status == "Failed":
+            status_cell.font = Font(color="006100", bold=True)
+        elif "Failed" in status:
             status_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-            status_cell.font = Font(color="9C0006")
-        else:  # Pending
+            status_cell.font = Font(color="9C0006", bold=True)
+        else:  # Skipped
             status_cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
             status_cell.font = Font(color="9C6500")
         

@@ -418,9 +418,17 @@ def main(max_jobs: int = 10):
             else:
                 print("📝 Applying...")
                 result = apply_with_bot(bot, url, resume_path)
-                success = bool(result)
+                # Check if actually succeeded (not just returned a string)
+                success = result == "Success" if isinstance(result, str) else bool(result)
 
-            status = "Success" if success else "Failed"
+            # Determine status from result
+            if success:
+                status = "Success"
+            elif result == "Skipped" or "Skipped" in str(result):
+                status = "Skipped"
+            else:
+                status = "Failed"
+                
             logger.log_application(
                 job_title=title,
                 company=company,

@@ -41,7 +41,7 @@ except Exception:
     MAX_APPLICATIONS_PER_DAY = 20
 
 # Comma-separated search queries / preferred locations
-SEARCH_QUERIES = [q.strip() for q in os.getenv("SEARCH_QUERIES", "Full Stack Intern,Frontend Intern,Web Developer Intern,React Developer Intern,Node.js Intern").split(",") if q.strip()]
+SEARCH_QUERIES = [q.strip() for q in os.getenv("SEARCH_QUERIES", "Full Stack,Frontend Intern,Web Developer Intern,React Developer Intern,Node.js Intern").split(",") if q.strip()]
 PREFERRED_LOCATIONS = [q.strip() for q in os.getenv("PREFERRED_LOCATIONS", "Chennai,India").split(",") if q.strip()]
 
 print(f"✅ Config loaded. Root path: {ROOT_DIR}")

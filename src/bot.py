@@ -142,6 +142,9 @@ class JobBot:
                 
                 # A. Auto-Fill inputs
                 self._fill_smart_fields()
+                
+                # A2. Handle dropdowns
+                self._fill_dropdowns()
 
                 # B. Upload Resume if asked
                 self._handle_upload(resume_path)
@@ -251,10 +254,12 @@ class JobBot:
                 if field.is_visible() and not field.get_attribute("value"):
                     label = self._get_label(field).lower()
                     
-                    # Match logic
+                    # Match logic - try both directions
                     matched = False
                     for key, value in PROFILE.items():
-                        if key in label:
+                        # Check if key is in label OR label contains key words
+                        key_lower = key.lower().replace("_", " ")
+                        if key_lower in label or any(word in label for word in key_lower.split()):
                             print(f"      ✍️ Filling {key}...")
                             field.fill(str(value))
                             human_sleep(0.2, 0.4)
@@ -285,42 +290,208 @@ class JobBot:
                 if not matched and text.strip():
                     unfilled_fields.append(f"Radio: {text[:100]}")
                     print(f"      ⚠️ Skipped unfilled radio: {text[:100]}")
-            
-            # Save unfilled fields if any
-            if unfilled_fields:
-                self._log_unfilled_fields(unfilled_fields)
         
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ Fill fields error: {e}")
+        
+        # Log unfilled fields
+        if unfilled_fields:
+            self._log_unfilled_fields(unfilled_fields)
+    
+    def _fill_dropdowns(self):
+        """Handle dropdown/select fields."""
+        try:
+            # Common dropdown answers
+            dropdown_answers = {
+                "english": "Professional working proficiency",
+                "proficiency": "Professional working proficiency",
+                "degree": "No",
+                "bachelor": "No",
+                "master": "No",
+                "education": "No",
+                "time zone": "No",
+                "us time": "No",
+                "experience": "2",
+                "years": "2",
+            }
+            
+            selects = self.page.locator("select")
+            for i in range(selects.count()):
+                select = selects.nth(i)
+                if select.is_visible():
+                    # Get associated label
+                    select_id = select.get_attribute("id")
+                    label_text = ""
+                    if select_id:
+                        try:
+                            label = self.page.locator(f"label[for='{select_id}']")
+                            if label.count() > 0:
+                                label_text = label.inner_text().lower()
+                        except:
+                            pass
+                    
+                    # Try to match and select
+                    for keyword, value in dropdown_answers.items():
+                        if keyword in label_text:
+                            try:
+                                select.select_option(label=value)
+                                print(f"      📋 Selected dropdown: {value} for {label_text[:40]}")
+                                human_sleep(0.2, 0.4)
+                                break
+                            except:
+                                # Try selecting by value/index if label doesn't work
+                                try:
+                                    options = select.locator("option").all()
+                                    for opt in options:
+                                        if value.lower() in opt.inner_text().lower():
+                                            opt.click()
+                                            print(f"      📋 Selected dropdown: {opt.inner_text()}")
+                                            break
+                                except:
+                                    pass
+        except Exception as e:
+            print(f"⚠️ Dropdown fill error: {e}")
     
     def _log_unfilled_fields(self, fields: list):
-        """Log unfilled fields to an Excel error tracker."""
+        """Log unfilled fields to a clean, actionable Excel tracker."""
         import pandas as pd
         from pathlib import Path
         from datetime import datetime
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
         
         try:
             error_file = Path("data/unfilled_fields_tracker.xlsx")
             
-            # Prepare data
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            data = {
-                "Timestamp": [timestamp] * len(fields),
-                "Unfilled Field": fields,
-                "Job URL": [self.page.url] * len(fields),
-            }
+            # Clean up field names for better readability
+            cleaned_fields = []
+            for field in fields:
+                # Remove "Radio: " prefix and clean up text
+                clean = field.replace("Radio: ", "").strip()
+                # Skip duplicates and empty
+                if clean and clean not in cleaned_fields:
+                    cleaned_fields.append(clean)
             
-            df = pd.DataFrame(data)
+            if not cleaned_fields:
+                return
             
-            # Append or create
+            # Prepare clean data
+            now = datetime.now()
+            job_url = self.page.url
+            
+            # Group by job URL to avoid duplicates
+            new_entries = []
+            for field in cleaned_fields:
+                new_entries.append({
+                    "Date": now.strftime("%Y-%m-%d %H:%M"),
+                    "Question/Field": field,
+                    "Suggested Answer": self._suggest_answer(field),
+                    "Job URL": job_url
+                })
+            
+            # Load existing or create new
             if error_file.exists():
-                existing = pd.read_excel(error_file)
-                df = pd.concat([existing, df], ignore_index=True)
+                existing_df = pd.read_excel(error_file)
+                # Remove duplicates from same job
+                existing_df = existing_df[existing_df["Job URL"] != job_url]
+                df = pd.concat([existing_df, pd.DataFrame(new_entries)], ignore_index=True)
+            else:
+                df = pd.DataFrame(new_entries)
             
+            # Save to Excel with formatting
             df.to_excel(error_file, index=False)
-            print(f"      📊 Logged {len(fields)} unfilled fields to {error_file}")
+            
+            # Apply formatting
+            wb = openpyxl.load_workbook(error_file)
+            ws = wb.active
+            
+            # Header formatting
+            header_font = Font(bold=True, size=12, color="FFFFFF")
+            header_fill = PatternFill(start_color="E74C3C", end_color="E74C3C", fill_type="solid")
+            
+            for col_num in range(1, 5):
+                cell = ws.cell(row=1, column=col_num)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Column widths
+            ws.column_dimensions['A'].width = 18  # Date
+            ws.column_dimensions['B'].width = 60  # Question/Field
+            ws.column_dimensions['C'].width = 30  # Suggested Answer
+            ws.column_dimensions['D'].width = 50  # Job URL
+            
+            # Freeze header
+            ws.freeze_panes = 'A2'
+            
+            wb.save(error_file)
+            print(f"      📊 Logged {len(cleaned_fields)} unfilled fields to {error_file}")
         except Exception as e:
-            print(f"      ⚠️ Could not log unfilled fields: {e}") 
+            print(f"      ⚠️ Could not log unfilled fields: {e}")
+    
+    def _suggest_answer(self, field: str) -> str:
+        """Suggest what to add to user_config based on field name."""
+        field_lower = field.lower()
+        
+        # Salary/CTC questions
+        if any(word in field_lower for word in ["ctc", "salary", "compensation", "expected"]):
+            if "current" in field_lower:
+                return 'Add to PROFILE: "current ctc": "0"'
+            else:
+                return 'Add to PROFILE: "expected ctc": "18"'
+        
+        # Experience questions
+        elif any(word in field_lower for word in ["experience", "years"]):
+            tech = None
+            if "python" in field_lower:
+                tech = "python"
+            elif "java" in field_lower:
+                tech = "java"
+            elif "react" in field_lower:
+                tech = "react"
+            elif "node" in field_lower:
+                tech = "node"
+            elif "aws" in field_lower or "cloud" in field_lower:
+                tech = "aws"
+            
+            if tech:
+                return f'Add to PROFILE: "{tech}": "2"'
+            else:
+                return 'Add to PROFILE: "experience": "2"'
+        
+        # Notice period
+        elif "notice" in field_lower:
+            return 'Add to PROFILE: "notice": "0"'
+        
+        # Yes/No questions (radio/checkboxes)
+        elif any(word in field_lower for word in ["willing", "comfortable", "authorized", "completed"]):
+            keyword = self._extract_keyword(field_lower)
+            return f'Add to ANSWERS: "{keyword}": "Yes" or "No"'
+        
+        # Dropdown selections
+        elif "select an option" in field_lower or "dropdown" in field_lower:
+            return "Check dropdown options and add to PROFILE or ANSWERS"
+        
+        else:
+            return "Review question and add appropriate value"
+    
+    def _extract_keyword(self, text: str) -> str:
+        """Extract key phrase from question for ANSWERS dict."""
+        # Common patterns
+        if "bachelor" in text or "degree" in text:
+            return "bachelor"
+        elif "background check" in text:
+            return "background check"
+        elif "remote" in text:
+            return "remote"
+        elif "relocate" in text:
+            return "relocate"
+        elif "time zone" in text or "us time" in text:
+            return "time zone"
+        else:
+            # Return first meaningful words
+            words = text.split()[:4]
+            return " ".join(words)
 
     def _get_label(self, element):
         """Helper to get label text for an input."""
